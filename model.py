@@ -1152,7 +1152,7 @@ def build_rpn_model(anchor_stride, anchors_per_location, depth):
 ############################################################
 
 def fpn_classifier_graph(rois, feature_maps,
-                         image_shape, pool_size, num_classes,num_keypoints = 17):
+                         image_shape, pool_size, num_classes,num_keypoints = 22):
     """Builds the computation graph of the feature pyramid network classifier
     and regressor heads.
 
@@ -1497,8 +1497,8 @@ def keypoint_weight_loss_graph(target_keypoint_weight, pred_class, target_class_
     # Reshape to merge batch and roi dimensions for simplicity.
     target_mask_class = tf.cast(target_keypoint_weight, tf.int64)
     target_class_ids = K.reshape(target_class_ids, (-1,))
-    pred_class = K.reshape(pred_class, (-1, 17, K.int_shape(pred_class)[3]))
-    target_mask_class = tf.cast(K.reshape(target_mask_class, (-1, 17)), tf.int64)
+    pred_class = K.reshape(pred_class, (-1, 22, K.int_shape(pred_class)[3]))
+    target_mask_class = tf.cast(K.reshape(target_mask_class, (-1, 22)), tf.int64)
 
     positive_roi_ix = tf.where(target_class_ids > 0)[:, 0]
 
@@ -1515,7 +1515,7 @@ def keypoint_weight_loss_graph(target_keypoint_weight, pred_class, target_class_
     loss = tf.reduce_mean(loss)
     return loss
 
-def test_keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weights, target_class_ids, pred_keypoint_logits,mask_shape=[56,56],number_point=17):
+def test_keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weights, target_class_ids, pred_keypoint_logits,mask_shape=[56,56],number_point=22):
     """
     This function is just use for inspecting the keypoint_mrcnn_mask_loss_graph
     target_keypoints: [batch, num_rois, num_keypoints].
@@ -1577,7 +1577,7 @@ def test_keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weight
 
 
 
-def keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weights, target_class_ids, pred_keypoints_logit, weight_loss = True, mask_shape=[56,56],number_point=17):
+def keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weights, target_class_ids, pred_keypoints_logit, weight_loss = True, mask_shape=[56,56],number_point=22):
     """Mask softmax cross-entropy loss for the keypoint head.
 
     target_keypoints: [batch, num_rois, num_keypoints].

@@ -55,7 +55,7 @@ class Config(object):
     # Number of classification classes (including background)
     NUM_CLASSES = 1  # Override in sub-classes
 
-    NUM_KEYPOINTS = 17 #Override in sub-classes
+    NUM_KEYPOINTS = 22 #Override in sub-classes
 
     # Length of square anchor side in pixels
     RPN_ANCHOR_SCALES = (32, 64, 128, 256, 512)
