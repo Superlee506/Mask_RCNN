@@ -142,7 +142,7 @@ class LipDataset(utils.Dataset):
             # the outline of each object instance. There are stores in the
             # shape_attributes (see json format above)
             polygons = [r['shape_attributes'] for r in a['regions'] if r['shape_attributes']['name'] == 'polygon']
-            points = [r['shape_attributes'] for r in a['regions'] if r['shape_attributes']['name'] == 'point']
+            points = [[r['shape_attributes']['cx'], r['shape_attributes']['cy'], 2] for r in a['regions'] if r['shape_attributes']['name'] == 'point']
 
             # load_mask() needs the image size to convert polygons to masks.
             # Unfortunately, VIA doesn't include it in JSON, so we must read
@@ -263,7 +263,7 @@ class LipDataset(utils.Dataset):
         keypoint = info["points"]
         #keypoint = np.reshape(keypoint, (-1, 3))
 
-        keypoints.append(keypoint)
+        keypoints.append(np.asarray(keypoint))
 
         return keypoints, mask.astype(np.bool), np.ones([mask.shape[-1]], dtype=np.int32)
 #for keypoints ends
