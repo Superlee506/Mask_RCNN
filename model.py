@@ -1535,10 +1535,10 @@ def test_keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weight
 
     target_keypoints = KL.Lambda(lambda  x: K.reshape(x,(-1, number_point)), name="target_keypoint_reshape")(target_keypoints)
 
-    # reshape target_keypoint_weights to [N, 17]
+    # reshape target_keypoint_weights to [N, NUM_KEYPOINTS]
     target_keypoint_weights = KL.Lambda(lambda  x:K.reshape(x, (-1, number_point)), name="target_keypoint_weights_reshape")(target_keypoint_weights)
 
-    # reshape pred_keypoint_masks to [N, 17, 56*56]
+    # reshape pred_keypoint_masks to [N, NUM_KEYPOINTS, 56*56]
     pred_keypoints_logits = KL.Lambda(lambda x:K.reshape(x,(-1, number_point, mask_shape[0] * mask_shape[1])), name="pred_keypoint_reshape")(pred_keypoint_logits)
 
 
@@ -1551,13 +1551,13 @@ def test_keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weight
         tf.gather(target_class_ids, positive_people_ix), tf.int64)
 
     # Gather the keypoint masks (predicted and true) that contribute to loss
-    # shape: [N_positive, 17]
+    # shape: [N_positive, NUM_KEYPOINTS]
     positive_target_keypoints = KL.Lambda(lambda x: tf.gather(x[0], tf.cast(x[1],tf.int64)), name="positive_target_keypoints")([target_keypoints, positive_people_ix])
     # positive_target_keypoint_masks = tf.gather(target_keypoint_masks, positive_people_ix)
 
-    # positive target_keypoint_weights to[N_positive, 17]
+    # positive target_keypoint_weights to[N_positive, NUM_KEYPOINTS]
     positive_keypoint_weights = KL.Lambda(lambda x: tf.cast(tf.gather(x[0],tf.cast(x[1],tf.int64)), tf.int64), name ="positive_keypoint_weights")([target_keypoint_weights, positive_people_ix])
-    # positive target_keypoint_weights to[N_positive, 17, 56*56]
+    # positive target_keypoint_weights to[N_positive, NUM_KEYPOINTS, 56*56]
     positive_pred_keypoints_logits = KL.Lambda(lambda x:tf.gather(x[0], tf.cast(x[1],tf.int64)),name="positive_pred_keypoint_masks")([pred_keypoints_logits, positive_people_ix])
 
     positive_target_keypoints = tf.cast(positive_target_keypoints, tf.int32)
@@ -1602,20 +1602,20 @@ def keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weights, ta
     ###Step 1 Get the positive target and predict keypoint masks
         # reshape target_keypoint_weights to [N, num_keypoints]
     target_keypoint_weights = K.reshape(target_keypoint_weights, (-1, number_point))
-        # reshape target_keypoint_masks to [N, 17]
+        # reshape target_keypoint_masks to [N, NUM_KEYPOINTS]
     target_keypoints = K.reshape(target_keypoints, (
         -1,  number_point))
 
-    # reshape pred_keypoint_masks to [N, 17, 56*56]
+    # reshape pred_keypoint_masks to [N, NUM_KEYPOINTS, 56*56]
     pred_keypoints_logit = K.reshape(pred_keypoints_logit,
                                     (-1, number_point, mask_shape[0]*mask_shape[1]))
 
         # Gather the keypoint masks (target and predict) that contribute to loss
-        # shape: [N_positive, 17]
+        # shape: [N_positive, NUM_KEYPOINTS]
     positive_target_keypoints = tf.cast(tf.gather(target_keypoints, positive_people_ix),tf.int32)
-    # shape: [N_positive,17, 56*56]
+    # shape: [N_positive,NUM_KEYPOINTS, 56*56]
     positive_pred_keypoints_logit = tf.gather(pred_keypoints_logit, positive_people_ix)
-        # positive target_keypoint_weights to[N_positive, 17]
+        # positive target_keypoint_weights to[N_positive, NUM_KEYPOINTS]
     positive_keypoint_weights = tf.cast(
         tf.gather(target_keypoint_weights, positive_people_ix), tf.float32)
 
