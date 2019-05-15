@@ -1152,7 +1152,7 @@ def build_rpn_model(anchor_stride, anchors_per_location, depth):
 ############################################################
 
 def fpn_classifier_graph(rois, feature_maps,
-                         image_shape, pool_size, num_classes,num_keypoints = 17):
+                         image_shape, pool_size, num_classes, num_keypoints):
     """Builds the computation graph of the feature pyramid network classifier
     and regressor heads.
 
@@ -1487,18 +1487,18 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
     loss = K.reshape(loss, [1, 1])
     return loss
 
-def keypoint_weight_loss_graph(target_keypoint_weight, pred_class, target_class_ids):
+def keypoint_weight_loss_graph(target_keypoint_weight, pred_class, target_class_ids, num_keypoints):
     """Loss for Mask class R-CNN whether key points are in picture.
 
-        target_mask_class: [batch, num_rois, 17(number of keypoints)]
+        target_mask_class: [batch, num_rois, number of keypoints]
         pred_class: [batch, num_rois, num_classes, 2]
         target_class_ids: [batch, num_rois]. Integer class IDs.
     """
     # Reshape to merge batch and roi dimensions for simplicity.
     target_mask_class = tf.cast(target_keypoint_weight, tf.int64)
     target_class_ids = K.reshape(target_class_ids, (-1,))
-    pred_class = K.reshape(pred_class, (-1, 17, K.int_shape(pred_class)[3]))
-    target_mask_class = tf.cast(K.reshape(target_mask_class, (-1, 17)), tf.int64)
+    pred_class = K.reshape(pred_class, (-1, num_keypoints, K.int_shape(pred_class)[3]))
+    target_mask_class = tf.cast(K.reshape(target_mask_class, (-1, num_keypoints)), tf.int64)
 
     positive_roi_ix = tf.where(target_class_ids > 0)[:, 0]
 
@@ -1515,7 +1515,7 @@ def keypoint_weight_loss_graph(target_keypoint_weight, pred_class, target_class_
     loss = tf.reduce_mean(loss)
     return loss
 
-def test_keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weights, target_class_ids, pred_keypoint_logits,mask_shape=[56,56],number_point=17):
+def test_keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weights, target_class_ids, pred_keypoint_logits,mask_shape, number_point):
     """
     This function is just use for inspecting the keypoint_mrcnn_mask_loss_graph
     target_keypoints: [batch, num_rois, num_keypoints].
@@ -1535,10 +1535,10 @@ def test_keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weight
 
     target_keypoints = KL.Lambda(lambda  x: K.reshape(x,(-1, number_point)), name="target_keypoint_reshape")(target_keypoints)
 
-    # reshape target_keypoint_weights to [N, 17]
+    # reshape target_keypoint_weights to [N, NUM_KEYPOINTS]
     target_keypoint_weights = KL.Lambda(lambda  x:K.reshape(x, (-1, number_point)), name="target_keypoint_weights_reshape")(target_keypoint_weights)
 
-    # reshape pred_keypoint_masks to [N, 17, 56*56]
+    # reshape pred_keypoint_masks to [N, NUM_KEYPOINTS, 56*56]
     pred_keypoints_logits = KL.Lambda(lambda x:K.reshape(x,(-1, number_point, mask_shape[0] * mask_shape[1])), name="pred_keypoint_reshape")(pred_keypoint_logits)
 
 
@@ -1551,13 +1551,13 @@ def test_keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weight
         tf.gather(target_class_ids, positive_people_ix), tf.int64)
 
     # Gather the keypoint masks (predicted and true) that contribute to loss
-    # shape: [N_positive, 17]
+    # shape: [N_positive, NUM_KEYPOINTS]
     positive_target_keypoints = KL.Lambda(lambda x: tf.gather(x[0], tf.cast(x[1],tf.int64)), name="positive_target_keypoints")([target_keypoints, positive_people_ix])
     # positive_target_keypoint_masks = tf.gather(target_keypoint_masks, positive_people_ix)
 
-    # positive target_keypoint_weights to[N_positive, 17]
+    # positive target_keypoint_weights to[N_positive, NUM_KEYPOINTS]
     positive_keypoint_weights = KL.Lambda(lambda x: tf.cast(tf.gather(x[0],tf.cast(x[1],tf.int64)), tf.int64), name ="positive_keypoint_weights")([target_keypoint_weights, positive_people_ix])
-    # positive target_keypoint_weights to[N_positive, 17, 56*56]
+    # positive target_keypoint_weights to[N_positive, NUM_KEYPOINTS, 56*56]
     positive_pred_keypoints_logits = KL.Lambda(lambda x:tf.gather(x[0], tf.cast(x[1],tf.int64)),name="positive_pred_keypoint_masks")([pred_keypoints_logits, positive_people_ix])
 
     positive_target_keypoints = tf.cast(positive_target_keypoints, tf.int32)
@@ -1577,7 +1577,7 @@ def test_keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weight
 
 
 
-def keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weights, target_class_ids, pred_keypoints_logit, weight_loss = True, mask_shape=[56,56],number_point=17):
+def keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weights, target_class_ids, pred_keypoints_logit, weight_loss, mask_shape, number_point):
     """Mask softmax cross-entropy loss for the keypoint head.
 
     target_keypoints: [batch, num_rois, num_keypoints].
@@ -1602,20 +1602,20 @@ def keypoint_mrcnn_mask_loss_graph(target_keypoints, target_keypoint_weights, ta
     ###Step 1 Get the positive target and predict keypoint masks
         # reshape target_keypoint_weights to [N, num_keypoints]
     target_keypoint_weights = K.reshape(target_keypoint_weights, (-1, number_point))
-        # reshape target_keypoint_masks to [N, 17]
+        # reshape target_keypoint_masks to [N, NUM_KEYPOINTS]
     target_keypoints = K.reshape(target_keypoints, (
         -1,  number_point))
 
-    # reshape pred_keypoint_masks to [N, 17, 56*56]
+    # reshape pred_keypoint_masks to [N, NUM_KEYPOINTS, 56*56]
     pred_keypoints_logit = K.reshape(pred_keypoints_logit,
                                     (-1, number_point, mask_shape[0]*mask_shape[1]))
 
         # Gather the keypoint masks (target and predict) that contribute to loss
-        # shape: [N_positive, 17]
+        # shape: [N_positive, NUM_KEYPOINTS]
     positive_target_keypoints = tf.cast(tf.gather(target_keypoints, positive_people_ix),tf.int32)
-    # shape: [N_positive,17, 56*56]
+    # shape: [N_positive,NUM_KEYPOINTS, 56*56]
     positive_pred_keypoints_logit = tf.gather(pred_keypoints_logit, positive_people_ix)
-        # positive target_keypoint_weights to[N_positive, 17]
+        # positive target_keypoint_weights to[N_positive, NUM_KEYPOINTS]
     positive_keypoint_weights = tf.cast(
         tf.gather(target_keypoint_weights, positive_people_ix), tf.float32)
 
@@ -1749,8 +1749,10 @@ def load_image_gt_keypoints(dataset, config, image_id, augment=True,
         if random.randint(0, 1):
             image = np.fliplr(image)
             mask = np.fliplr(mask)
-            keypoint_names,keypoint_flip_map = utils.get_keypoints()
-            keypoints = utils.flip_keypoints(keypoint_names,keypoint_flip_map,keypoints, image.shape[1])
+            # use this augmentation option if it is COCO Dataset
+            if config.NUM_KEYPOINTS==17:
+                keypoint_names,keypoint_flip_map = utils.get_keypoints()
+                keypoints = utils.flip_keypoints(keypoint_names,keypoint_flip_map,keypoints, image.shape[1])
 
     # Bounding boxes. Note that some boxes might be all zeros
     # if the corresponding mask got cropped out.
@@ -2684,7 +2686,7 @@ class MaskRCNN():
             # TODO: verify that this handles zero padded ROIs
             mrcnn_class_logits, mrcnn_class, mrcnn_bbox =\
                 fpn_classifier_graph(rois, mrcnn_feature_maps, config.IMAGE_SHAPE,
-                                     config.POOL_SIZE, config.NUM_CLASSES)
+                                     config.POOL_SIZE, config.NUM_CLASSES, config.NUM_KEYPOINTS)
 
 
             mrcnn_mask = build_fpn_mask_graph(rois, mrcnn_feature_maps,
@@ -2714,15 +2716,14 @@ class MaskRCNN():
             mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x),
                                            name="mrcnn_mask_loss")(
                 [target_mask, target_class_ids, mrcnn_mask])
-            keypoint_loss = KL.Lambda(lambda x: keypoint_mrcnn_mask_loss_graph(*x, weight_loss=config.WEIGHT_LOSS), name="keypoint_mrcnn_mask_loss")(
+            keypoint_loss = KL.Lambda(lambda x: keypoint_mrcnn_mask_loss_graph(*x, weight_loss=config.WEIGHT_LOSS, number_point=config.NUM_KEYPOINTS, mask_shape=config.KEYPOINT_MASK_SHAPE), name="keypoint_mrcnn_mask_loss")(
                 [target_keypoint, target_keypoint_weight, target_class_ids, keypoint_mrcnn_mask])
 
             # test_target_keypoint_mask = test_keypoint_mrcnn_mask_loss_graph(target_keypoint, target_keypoint_weight,
-            #                                                        target_class_ids, keypoint_mrcnn_mask)
+            #                                                        target_class_ids, keypoint_mrcnn_mask, self.config.NUM_KEYPOINTS)
 
             # keypoint_weight_loss = KL.Lambda(lambda x: keypoint_weight_loss_graph(*x), name="keypoint_weight_loss")(
-            #     [target_keypoint_weight, keypoint_weight_logits, target_class_ids])
-
+            #     [target_keypoint_weight, keypoint_weight_logits, target_class_ids, self.config.NUM_KEYPOINTS])
 
 
             # Model generated
@@ -2746,7 +2747,7 @@ class MaskRCNN():
             # Proposal classifier and BBox regressor heads
             mrcnn_class_logits, mrcnn_class, mrcnn_bbox =\
                 fpn_classifier_graph(rpn_rois, mrcnn_feature_maps, config.IMAGE_SHAPE,
-                                     config.POOL_SIZE, config.NUM_CLASSES)
+                                     config.POOL_SIZE, config.NUM_CLASSES, config.NUM_KEYPOINTS)
 
             # Detections
             # output is
