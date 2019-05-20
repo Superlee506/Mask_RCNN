@@ -40,17 +40,17 @@ assert LooseVersion(keras.__version__) >= LooseVersion('2.0.8')
 #  Utility Functions
 ############################################################
 
-def log(text, array=None):
-    """Prints a text message. And, optionally, if a Numpy array is provided it
-    prints it's shape, min, and max values.
-    """
-    if array is not None:
-        text = text.ljust(25)
-        text += ("shape: {:20}  min: {:10.5f}  max: {:10.5f}".format(
-            str(array.shape),
-            array.min() if array.size else "",
-            array.max() if array.size else ""))
-    print(text)
+# def log(text, array=None):
+#     """Prints a text message. And, optionally, if a Numpy array is provided it
+#     prints it's shape, min, and max values.
+#     """
+#     if array is not None:
+#         text = text.ljust(25)
+#         text += ("shape: {:20}  min: {:10.5f}  max: {:10.5f}".format(
+#             str(array.shape),
+#             array.min() if array.size else "",
+#             array.max() if array.size else ""))
+#     print(text)
 
 
 class BatchNorm(KL.BatchNormalization):
@@ -1306,6 +1306,7 @@ def build_fpn_keypoint_graph(rois, feature_maps,
     x = KL.TimeDistributed(KL.Lambda(lambda x: tf.transpose(x,[0,3,1,2])), name="mrcnn_keypoint_mask_transpose")(x)
     s = K.int_shape(x)
     x = KL.Reshape((s[1], num_keypoints, -1), name='mrcnn_keypoint_mask_reshape')(x)
+
     return x
 
 
@@ -1703,7 +1704,7 @@ def load_image_gt(dataset, config, image_id, augment=False,
     return image, image_meta, class_ids, bbox, mask
 
 
-def load_image_gt_keypoints(dataset, config, image_id, augment=True,
+def load_image_gt_keypoints(dataset, config, image_id, augmentation=True, augment=False,
                   use_mini_mask=False):
     """Load and return ground truth data for an image (image, keypoint_mask, keypoint_weight, mask, bounding boxes).
 
@@ -1741,16 +1742,52 @@ def load_image_gt_keypoints(dataset, config, image_id, augment=True,
         max_dim=config.IMAGE_MAX_DIM,
         padding=config.IMAGE_PADDING)
     mask = utils.resize_mask(mask, scale, padding)
-    keypoints = utils.resize_keypoints(keypoints, image.shape[:2], scale, padding)
+
 
     # Random horizontal flips.
 
     if augment:
+        keypoints = utils.resize_keypoints(keypoints, image.shape[:2], scale, padding)
         if random.randint(0, 1):
             image = np.fliplr(image)
             mask = np.fliplr(mask)
             keypoint_names,keypoint_flip_map = utils.get_keypoints()
             keypoints = utils.flip_keypoints(keypoint_names,keypoint_flip_map,keypoints, image.shape[1])
+
+    if augmentation:
+        import imgaug
+
+        # Augmenters that are safe to apply to masks
+        # Some, such as Affine, have settings that make them unsafe, so always
+        # test your augmentation on masks
+        MASK_AUGMENTERS = ["Sequential", "SomeOf", "OneOf", "Sometimes",
+                           "Fliplr", "Flipud", "CropAndPad",
+                           "Affine", "PiecewiseAffine"]
+
+        def hook(images, augmenter, parents, default):
+            """Determines which augmenters to apply to masks."""
+            return augmenter.__class__.__name__ in MASK_AUGMENTERS
+
+        # Store shapes before augmentation to compare
+        image_shape = image.shape
+        mask_shape = mask.shape
+
+        keypoints = imgaug.KeypointsOnImage([
+            imgaug.Keypoint(x=r[0], y=r[1]) for r in keypoints
+        ], shape=image_shape)
+
+        # Make augmenters deterministic to apply similarly to images and masks
+        det = augmentation.to_deterministic()
+        image = det.augment_image(image)
+        # Change mask to np.uint8 because imgaug doesn't support np.bool
+        mask = det.augment_image(mask.astype(np.uint8),
+                                 hooks=imgaug.HooksImages(activator=hook))
+        keypoints = det.augment_keypoints([keypoints])[0]
+        # Verify that shapes didn't change
+        assert image.shape == image_shape, "Augmentation shouldn't change image size"
+        assert mask.shape == mask_shape, "Augmentation shouldn't change mask size"
+        # Change mask back to bool
+        mask = mask.astype(np.bool)
 
     # Bounding boxes. Note that some boxes might be all zeros
     # if the corresponding mask got cropped out.
@@ -2125,7 +2162,7 @@ def generate_random_rois(image_shape, count, gt_class_ids, gt_boxes):
     return rois
 
 
-def data_generator_keypoint(dataset, config, shuffle=True, augment=True, random_rois=0,
+def data_generator_keypoint(dataset, config, shuffle=True, augmentation=True, augment=False, random_rois=0,
                    batch_size=1, detection_targets=False):
     """A generator that returns images and corresponding target class ids,
     bounding box deltas, keypoint_masks, keypoint_weights, masks.
@@ -2191,7 +2228,7 @@ def data_generator_keypoint(dataset, config, shuffle=True, augment=True, random_
             image_id = image_ids[image_index]
             #image_meta:image_id,image_shape,windows.active_class_ids
             image, image_meta, gt_class_ids, gt_boxes, gt_masks, gt_keypoints = \
-                load_image_gt_keypoints(dataset, config, image_id, augment, use_mini_mask=config.USE_MINI_MASK)
+                load_image_gt_keypoints(dataset, config, image_id, augmentation, use_mini_mask=config.USE_MINI_MASK)
 
             Num_keypoint = np.shape(gt_keypoints)[1]
 
@@ -2808,7 +2845,7 @@ class MaskRCNN():
         if not checkpoints:
             return dir_name, None
         checkpoint = os.path.join(dir_name, checkpoints[-1])
-        return dir_name, checkpoint
+        return checkpoint
 
     def load_weights(self, filepath, by_name=False, exclude=None):
         """Modified version of the correspoding Keras function with
@@ -2817,7 +2854,7 @@ class MaskRCNN():
         exlude: list of layer names to excluce
         """
         import h5py
-        from keras.engine import topology
+        from keras.engine import saving
 
         if exclude:
             by_name = True
@@ -2839,9 +2876,9 @@ class MaskRCNN():
             layers = filter(lambda l: l.name not in exclude, layers)
 
         if by_name:
-            topology.load_weights_from_hdf5_group_by_name(f, layers)
+            saving.load_weights_from_hdf5_group_by_name(f, layers)
         else:
-            topology.load_weights_from_hdf5_group(f, layers)
+            saving.load_weights_from_hdf5_group(f, layers)
         if hasattr(f, 'close'):
             f.close()
 
@@ -3009,10 +3046,10 @@ class MaskRCNN():
         # Data keypoint generators
 
         train_generator = data_generator_keypoint(train_dataset, self.config, shuffle=True,
-                                        batch_size=self.config.BATCH_SIZE,augment =True)
+                                        batch_size=self.config.BATCH_SIZE,augmentation =True)
         val_generator = data_generator_keypoint(val_dataset, self.config, shuffle=True,
                                        batch_size=self.config.BATCH_SIZE,
-                                       augment=False)
+                                       augmentation=False)
 
         # Callbacks
         callbacks = [
